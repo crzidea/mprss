@@ -1,0 +1,17 @@
+{
+  "name": "mprss",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker to merge and deduplicate audiences.me RSS feeds",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.107.0"
+  }
+}
