@@ -1,4 +1,4 @@
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 
 // Escape unsafe XML characters for plain text or attribute fields
 export function escapeXml(unsafe) {
@@ -101,94 +101,105 @@ export function mergeFeeds(feeds) {
   };
 }
 
-// Rebuilds the final merged feed back to XML string
+// Rebuilds the final merged feed back to XML string using XMLBuilder
 export function buildRssXml(mergedFeed) {
-  const channelTitle = escapeXml(mergedFeed.title || 'Audiences Torrents');
-  const channelLink = escapeXml(mergedFeed.link || 'https://audiences.me');
-  const channelDesc = escapeXml(mergedFeed.description || 'Latest torrents from Audiences');
-  const channelLang = escapeXml(mergedFeed.language || 'zh-cn');
-  const channelCopyright = escapeXml(mergedFeed.copyright || '');
-  const channelEditor = escapeXml(mergedFeed.managingEditor || '');
-  const channelWebmaster = escapeXml(mergedFeed.webMaster || '');
-  const pubDate = new Date().toUTCString();
+  const channel = {
+    title: mergedFeed.title || 'Audiences Torrents',
+    link: { '__cdata': mergedFeed.link || 'https://audiences.me' },
+    description: { '__cdata': mergedFeed.description || 'Latest torrents from Audiences' },
+    language: mergedFeed.language || 'zh-cn',
+    copyright: mergedFeed.copyright || '',
+    pubDate: new Date().toUTCString(),
+    generator: 'Antigravity RSS Merger',
+  };
 
-  let imageXml = '';
-  if (mergedFeed.image) {
-    const imgUrl = escapeXml(getText(mergedFeed.image.url));
-    const imgTitle = escapeXml(getText(mergedFeed.image.title));
-    const imgLink = escapeXml(getText(mergedFeed.image.link));
-    const imgWidth = mergedFeed.image.width ? `\n			<width>${escapeXml(getText(mergedFeed.image.width))}</width>` : '';
-    const imgHeight = mergedFeed.image.height ? `\n			<height>${escapeXml(getText(mergedFeed.image.height))}</height>` : '';
-    const imgDesc = mergedFeed.image.description ? `\n			<description>${escapeXml(getText(mergedFeed.image.description))}</description>` : '';
-    imageXml = `
-		<image>
-			<url><![CDATA[${imgUrl}]]></url>
-			<title>${imgTitle}</title>
-			<link><![CDATA[${imgLink}]]></link>${imgWidth}${imgHeight}${imgDesc}
-		</image>`;
+  if (mergedFeed.managingEditor) {
+    channel.managingEditor = mergedFeed.managingEditor;
+  }
+  if (mergedFeed.webMaster) {
+    channel.webMaster = mergedFeed.webMaster;
   }
 
-  const itemsXml = mergedFeed.items.map(item => {
-    const title = getText(item.title);
-    const link = getText(item.link);
-    const desc = getText(item.description);
-    const author = getText(item.author);
-    const comments = getText(item.comments);
-    const pubDate = getText(item.pubDate);
+  if (mergedFeed.image) {
+    channel.image = {
+      url: { '__cdata': getText(mergedFeed.image.url) },
+      title: getText(mergedFeed.image.title),
+      link: { '__cdata': getText(mergedFeed.image.link) }
+    };
+    if (mergedFeed.image.width) {
+      channel.image.width = getText(mergedFeed.image.width);
+    }
+    if (mergedFeed.image.height) {
+      channel.image.height = getText(mergedFeed.image.height);
+    }
+    if (mergedFeed.image.description) {
+      channel.image.description = getText(mergedFeed.image.description);
+    }
+  }
 
-    let catXml = '';
+  channel.item = mergedFeed.items.map(item => {
+    const itemObj = {
+      title: { '__cdata': getText(item.title) },
+      link: getText(item.link),
+      description: { '__cdata': getText(item.description) },
+      author: getText(item.author),
+      pubDate: getText(item.pubDate),
+    };
+
     if (item.category) {
       if (typeof item.category === 'object') {
-        const domainAttr = item.category['@_domain'] ? ` domain="${escapeXml(item.category['@_domain'])}"` : '';
-        const catText = getText(item.category);
-        catXml = `\n			<category${domainAttr}>${escapeXml(catText)}</category>`;
+        itemObj.category = {
+          '@_domain': item.category['@_domain'],
+          '#text': getText(item.category)
+        };
       } else {
-        catXml = `\n			<category>${escapeXml(item.category)}</category>`;
+        itemObj.category = getText(item.category);
       }
     }
 
-    let encXml = '';
     if (item.enclosure && typeof item.enclosure === 'object') {
-      const url = item.enclosure['@_url'] || '';
-      const length = item.enclosure['@_length'] || '';
-      const type = item.enclosure['@_type'] || '';
-      encXml = `\n			<enclosure url="${escapeXml(url)}" length="${escapeXml(length)}" type="${escapeXml(type)}" />`;
+      itemObj.enclosure = {
+        '@_url': item.enclosure['@_url'],
+        '@_length': item.enclosure['@_length'],
+        '@_type': item.enclosure['@_type']
+      };
     }
 
-    let guidXml = '';
     if (item.guid) {
       if (typeof item.guid === 'object') {
-        const isPermaLink = item.guid['@_isPermaLink'] !== undefined ? ` isPermaLink="${escapeXml(item.guid['@_isPermaLink'])}"` : '';
-        const guidText = getText(item.guid);
-        guidXml = `\n			<guid${isPermaLink}>${escapeXml(guidText)}</guid>`;
+        itemObj.guid = {
+          '@_isPermaLink': item.guid['@_isPermaLink'],
+          '#text': getText(item.guid)
+        };
       } else {
-        guidXml = `\n			<guid>${escapeXml(item.guid)}</guid>`;
+        itemObj.guid = getText(item.guid);
       }
     }
 
-    return `		<item>
-			<title><![CDATA[${title}]]></title>
-			<link>${escapeXml(link)}</link>
-			<description><![CDATA[${desc}]]></description>
-			<author>${escapeXml(author)}</author>${catXml}${encXml}${guidXml}
-			<comments><![CDATA[${comments}]]></comments>
-			<pubDate>${escapeXml(pubDate)}</pubDate>
-		</item>`;
-  }).join('\n');
+    if (item.comments) {
+      itemObj.comments = { '__cdata': getText(item.comments) };
+    }
 
-  return `<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0">
-	<channel>
-		<title>${channelTitle}</title>
-		<link><![CDATA[${channelLink}]]></link>
-		<description><![CDATA[${channelDesc}]]></description>
-		<language>${channelLang}</language>
-		<copyright>${channelCopyright}</copyright>
-		<managingEditor>${channelEditor}</managingEditor>
-		<webMaster>${channelWebmaster}</webMaster>
-		<pubDate>${pubDate}</pubDate>
-		<generator>Antigravity RSS Merger</generator>${imageXml}
-${itemsXml}
-	</channel>
-</rss>`;
+    return itemObj;
+  });
+
+  const builder = new XMLBuilder({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    cdataPropName: '__cdata',
+    format: true,
+  });
+
+  const outputObj = {
+    '?xml': {
+      '@_version': '1.0',
+      '@_encoding': 'utf-8'
+    },
+    rss: {
+      '@_version': '2.0',
+      channel: channel
+    }
+  };
+
+  return builder.build(outputObj);
 }
