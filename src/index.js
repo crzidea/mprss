@@ -19,17 +19,33 @@ export default {
       // Encode the key for safety inside nested query strings
       const encodedKey = encodeURIComponent(rsskey);
 
+      // Define the base URL for the stale-cache proxy
+      const baseUrl = env.PROXY_BASE_URL || 'https://stale-cache.crzidea.workers.dev';
+
       // Define both source URLs with the supplied rsskey
-      const url1 = `https://stale-cache.crzidea.workers.dev/?regex=%5E%5C%3C&ttl=120&url=https%3A%2F%2Faudiences.me%2Ftorrentrss.php%3Frows%3D50%26cat401%3D1%26cat402%3D1%26med10%3D1%26sta5%3D1%26tea19%3D1%26tea21%3D1%26tea20%3D1%26torrent_type%3D0%26rsskey%3D${encodedKey}`;
-      const url2 = `https://stale-cache.crzidea.workers.dev/?regex=%5E%5C%3C&ttl=120&url=https%3A%2F%2Faudiences.me%2Ftorrentrss.php%3Frows%3D50%26cat401%3D1%26cat402%3D1%26med10%3D1%26sta1%3D1%26tea19%3D1%26tea21%3D1%26tea20%3D1%26torrent_type%3D0%26rsskey%3D${encodedKey}`;
+      const url1 = `${baseUrl}/?regex=%5E%5C%3C&ttl=120&url=https%3A%2F%2Faudiences.me%2Ftorrentrss.php%3Frows%3D50%26cat401%3D1%26cat402%3D1%26med10%3D1%26sta5%3D1%26tea19%3D1%26tea21%3D1%26tea20%3D1%26torrent_type%3D0%26rsskey%3D${encodedKey}`;
+      const url2 = `${baseUrl}/?regex=%5E%5C%3C&ttl=120&url=https%3A%2F%2Faudiences.me%2Ftorrentrss.php%3Frows%3D50%26cat401%3D1%26cat402%3D1%26med10%3D1%26sta1%3D1%26tea19%3D1%26tea21%3D1%26tea20%3D1%26torrent_type%3D0%26rsskey%3D${encodedKey}`;
 
       console.log('Fetching source feeds...');
       
-      // Fetch both feeds in parallel
-      const [res1, res2] = await Promise.all([
-        fetch(url1, { headers: { 'User-Agent': 'Antigravity-RSS-Merger/1.0' } }),
-        fetch(url2, { headers: { 'User-Agent': 'Antigravity-RSS-Merger/1.0' } })
-      ]);
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      };
+
+      let res1, res2;
+      if (env.STALE_CACHE) {
+        console.log('Fetching using Service Binding (STALE_CACHE)...');
+        [res1, res2] = await Promise.all([
+          env.STALE_CACHE.fetch(new Request(url1, { headers })),
+          env.STALE_CACHE.fetch(new Request(url2, { headers }))
+        ]);
+      } else {
+        console.log('Fetching using public internet fetch...');
+        [res1, res2] = await Promise.all([
+          fetch(url1, { headers }),
+          fetch(url2, { headers })
+        ]);
+      }
 
       if (!res1.ok) {
         throw new Error(`Failed to fetch Feed 1 (sta5). Status: ${res1.status} ${res1.statusText}`);

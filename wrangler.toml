@@ -1,3 +1,8 @@
 name = "mprss"
 main = "src/index.js"
 compatibility_date = "2026-07-04"
+
+[[services]]
+binding = "STALE_CACHE"
+service = "stale-cache"
+
