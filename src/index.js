@@ -74,11 +74,33 @@ export default {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       };
 
-      console.log('Fetching using public internet fetch...');
-      const [res1, res2] = await Promise.all([
-        fetch(url1, { headers }),
-        fetch(url2, { headers })
-      ]);
+      let res1, res2;
+      let usedServiceBinding = false;
+
+      if (env.STALE_CACHE) {
+        try {
+          console.log('Attempting to fetch using Service Binding (STALE_CACHE)...');
+          [res1, res2] = await Promise.all([
+            env.STALE_CACHE.fetch(new Request(url1, { headers })),
+            env.STALE_CACHE.fetch(new Request(url2, { headers }))
+          ]);
+          if (res1.ok && res2.ok) {
+            usedServiceBinding = true;
+          } else {
+            console.warn(`Service Binding returned non-ok status. Fallback to public fetch. Status: ${res1.status} / ${res2.status}`);
+          }
+        } catch (e) {
+          console.warn('Service Binding fetch failed. Fallback to public fetch:', e.message);
+        }
+      }
+
+      if (!usedServiceBinding) {
+        console.log('Fetching using public internet fetch...');
+        [res1, res2] = await Promise.all([
+          fetch(url1, { headers }),
+          fetch(url2, { headers })
+        ]);
+      }
 
       if (!res1.ok) {
         throw new Error(`Failed to fetch Feed 1 (sta5). Status: ${res1.status} ${res1.statusText}`);
