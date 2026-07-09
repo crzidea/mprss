@@ -1,24 +1,22 @@
 import { parseFeed, mergeFeeds, buildRssXml } from './rss.js';
 
-// Helper to construct proxy URLs dynamically
-function buildProxyUrl(baseUrl, targetParams, ttl) {
-  const targetUrl = new URL('https://audiences.me/torrentrss.php');
-  
-  const defaultParams = {
-    rows: '50',
-    cat401: '1',
-    cat402: '1',
-    med10: '1',
-    tea19: '1',
-    tea20: '1',
-    tea21: '1',
-    torrent_type: '0'
-  };
+// Helper to construct proxy URLs dynamically, preserving the exact query parameter ordering
+function buildProxyUrl(baseUrl, rsskey, staVal, ttl) {
+  const params = [
+    ['rows', '50'],
+    ['cat401', '1'],
+    ['cat402', '1'],
+    ['med10', '1'],
+    [`sta${staVal}`, '1'],
+    ['tea19', '1'],
+    ['tea21', '1'],
+    ['tea20', '1'],
+    ['torrent_type', '0'],
+    ['rsskey', rsskey]
+  ];
 
-  for (const [key, value] of Object.entries(defaultParams)) {
-    targetUrl.searchParams.set(key, value);
-  }
-  for (const [key, value] of Object.entries(targetParams)) {
+  const targetUrl = new URL('https://audiences.me/torrentrss.php');
+  for (const [key, value] of params) {
     targetUrl.searchParams.set(key, value);
   }
 
@@ -66,9 +64,9 @@ export default {
       // Define the base URL for the stale-cache proxy
       const baseUrl = env.PROXY_BASE_URL || 'https://stale-cache.crzidea.workers.dev';
 
-      // Define both source URLs dynamically at runtime
-      const url1 = buildProxyUrl(baseUrl, { rsskey, sta5: '1' }, ttl);
-      const url2 = buildProxyUrl(baseUrl, { rsskey, sta1: '1' }, ttl);
+      // Define both source URLs dynamically at runtime, matching original query parameter order
+      const url1 = buildProxyUrl(baseUrl, rsskey, '5', ttl);
+      const url2 = buildProxyUrl(baseUrl, rsskey, '1', ttl);
 
       console.log('Fetching source feeds...');
       
