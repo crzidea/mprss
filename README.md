@@ -46,21 +46,31 @@ npm run deploy
 
 Cloudflare Workers has a routing limitation where a worker fetching another worker on the same account/zone using its public `*.workers.dev` URL will route internally and fail with `404 Not Found`.
 
-To resolve this, this project supports two methods:
-
-### Method 1: Service Bindings (Recommended)
-By default, the `wrangler.toml` is configured with a Service Binding:
-```toml
-[[services]]
-binding = "STALE_CACHE"
-service = "stale-cache"
-```
-When deployed, Cloudflare routes requests to `stale-cache` internally. In local development (where bindings are not active), the worker automatically falls back to fetching over the public internet.
-
-### Method 2: Custom Proxy Domain
-If you have bound your `stale-cache` worker to a custom domain (e.g., `stale-cache.example.com`), you can configure the `PROXY_BASE_URL` environment variable in your Cloudflare dashboard (under **Worker Settings -> Variables**):
+To resolve this, you can bind your `stale-cache` worker to a custom domain (e.g., `stale-cache.example.com`) and configure the `PROXY_BASE_URL` environment variable in your Cloudflare dashboard (under **Worker Settings -> Variables**):
 - **Variable Name**: `PROXY_BASE_URL`
 - **Value**: `https://stale-cache.example.com`
+
+---
+
+## Verification and Local Testing
+
+### 1. Setup Local Environment File
+Create a `.env` file in the root directory (this file is ignored by Git via [.gitignore](file:///home/crzidea/src/mprss/.gitignore)) and add your test RSS key:
+```env
+TEST_RSS_KEY=bd03132aaa3840442406830ee742cdee
+```
+
+### 2. Run the Verification Command
+After starting the dev server (`npm run dev`), load the variable from `.env` and query the worker using `curl`:
+```bash
+# Load variables from .env and query the dev server
+export $(cat .env | xargs) && curl -i "http://127.0.0.1:8787/?rsskey=${TEST_RSS_KEY}"
+```
+
+To verify a custom TTL (e.g., 600 seconds):
+```bash
+export $(cat .env | xargs) && curl -i "http://127.0.0.1:8787/?rsskey=${TEST_RSS_KEY}&ttl=600"
+```
 
 ---
 

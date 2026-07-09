@@ -1,5 +1,35 @@
 import { parseFeed, mergeFeeds, buildRssXml } from './rss.js';
 
+// Helper to construct proxy URLs dynamically
+function buildProxyUrl(baseUrl, targetParams, ttl) {
+  const targetUrl = new URL('https://audiences.me/torrentrss.php');
+  
+  const defaultParams = {
+    rows: '50',
+    cat401: '1',
+    cat402: '1',
+    med10: '1',
+    tea19: '1',
+    tea20: '1',
+    tea21: '1',
+    torrent_type: '0'
+  };
+
+  for (const [key, value] of Object.entries(defaultParams)) {
+    targetUrl.searchParams.set(key, value);
+  }
+  for (const [key, value] of Object.entries(targetParams)) {
+    targetUrl.searchParams.set(key, value);
+  }
+
+  const proxyUrl = new URL(baseUrl);
+  proxyUrl.searchParams.set('regex', '^\\<');
+  proxyUrl.searchParams.set('ttl', String(ttl));
+  proxyUrl.searchParams.set('url', targetUrl.toString());
+
+  return proxyUrl.toString();
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -16,15 +46,29 @@ export default {
         );
       }
 
-      // Encode the key for safety inside nested query strings
-      const encodedKey = encodeURIComponent(rsskey);
+      // Read optional 'ttl' query param, default to 300
+      const ttlParam = url.searchParams.get('ttl');
+      const parsedTtl = ttlParam ? parseInt(ttlParam, 10) : 300;
+      const ttl = isNaN(parsedTtl) || parsedTtl <= 0 ? 300 : parsedTtl;
+
+      // Check Cloudflare Cache
+      const cache = typeof caches !== 'undefined' ? caches.default : null;
+      const isGet = request.method === 'GET';
+      let cachedResponse = null;
+      if (cache && isGet) {
+        cachedResponse = await cache.match(request);
+      }
+      if (cachedResponse) {
+        console.log('Returning response from cache');
+        return cachedResponse;
+      }
 
       // Define the base URL for the stale-cache proxy
       const baseUrl = env.PROXY_BASE_URL || 'https://stale-cache.crzidea.workers.dev';
 
-      // Define both source URLs with the supplied rsskey
-      const url1 = `${baseUrl}/?regex=%5E%5C%3C&ttl=120&url=https%3A%2F%2Faudiences.me%2Ftorrentrss.php%3Frows%3D50%26cat401%3D1%26cat402%3D1%26med10%3D1%26sta5%3D1%26tea19%3D1%26tea21%3D1%26tea20%3D1%26torrent_type%3D0%26rsskey%3D${encodedKey}`;
-      const url2 = `${baseUrl}/?regex=%5E%5C%3C&ttl=120&url=https%3A%2F%2Faudiences.me%2Ftorrentrss.php%3Frows%3D50%26cat401%3D1%26cat402%3D1%26med10%3D1%26sta1%3D1%26tea19%3D1%26tea21%3D1%26tea20%3D1%26torrent_type%3D0%26rsskey%3D${encodedKey}`;
+      // Define both source URLs dynamically at runtime
+      const url1 = buildProxyUrl(baseUrl, { rsskey, sta5: '1' }, ttl);
+      const url2 = buildProxyUrl(baseUrl, { rsskey, sta1: '1' }, ttl);
 
       console.log('Fetching source feeds...');
       
@@ -32,20 +76,11 @@ export default {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       };
 
-      let res1, res2;
-      if (env.STALE_CACHE) {
-        console.log('Fetching using Service Binding (STALE_CACHE)...');
-        [res1, res2] = await Promise.all([
-          env.STALE_CACHE.fetch(new Request(url1, { headers })),
-          env.STALE_CACHE.fetch(new Request(url2, { headers }))
-        ]);
-      } else {
-        console.log('Fetching using public internet fetch...');
-        [res1, res2] = await Promise.all([
-          fetch(url1, { headers }),
-          fetch(url2, { headers })
-        ]);
-      }
+      console.log('Fetching using public internet fetch...');
+      const [res1, res2] = await Promise.all([
+        fetch(url1, { headers }),
+        fetch(url2, { headers })
+      ]);
 
       if (!res1.ok) {
         throw new Error(`Failed to fetch Feed 1 (sta5). Status: ${res1.status} ${res1.statusText}`);
@@ -69,12 +104,19 @@ export default {
       console.log('Rebuilding merged RSS XML...');
       const mergedXml = buildRssXml(mergedFeed);
 
-      return new Response(mergedXml, {
+      const response = new Response(mergedXml, {
         headers: {
           'Content-Type': 'application/xml; charset=utf-8',
-          'Cache-Control': 'public, max-age=120'
+          'Cache-Control': `public, max-age=${ttl}`
         }
       });
+
+      // Store response in cache (only for GET requests in environments where cache is available)
+      if (cache && isGet) {
+        ctx.waitUntil(cache.put(request, response.clone()));
+      }
+
+      return response;
 
     } catch (err) {
       console.error('Error during feed merge:', err.message);
